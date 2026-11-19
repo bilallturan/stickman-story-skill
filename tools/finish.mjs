@@ -22,13 +22,13 @@ const mix = path.join(proj, "work", "mix.wav");
 if (!fs.existsSync(mix)) throw new Error("work/mix.wav missing: run tools/sound.mjs first");
 
 // pass 1: measure loudness; pass 2: encode with the measured values (accurate -14 LUFS)
-const m = run(["-hide_banner", "-i", mix, "-af", "loudnorm=I=-14:TP=-1:LRA=11:print_format=json", "-f", "null", "-"]).stderr;
+const m = run(["-hide_banner", "-i", mix, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"]).stderr;
 const j = JSON.parse(m.slice(m.lastIndexOf("{"), m.lastIndexOf("}") + 1));
-const ln = `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${j.input_i}:measured_TP=${j.input_tp}:measured_LRA=${j.input_lra}:measured_thresh=${j.input_thresh}:offset=${j.target_offset}:linear=true`;
+const ln = `loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=${j.input_i}:measured_TP=${j.input_tp}:measured_LRA=${j.input_lra}:measured_thresh=${j.input_thresh}:offset=${j.target_offset}:linear=true`;
 const outDir = path.join(proj, "out"); fs.mkdirSync(outDir, { recursive: true });
 const dst = path.join(outDir, `${title}.mp4`);
 run(["-v", "error", "-y", "-framerate", String(fps), "-i", path.join(proj, "frames", "f%05d.jpg"), "-i", mix,
-  "-af", `${ln},aresample=48000`, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+  "-af", `${ln},alimiter=limit=0.84:level=false:attack=2:release=60,aresample=48000`, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
   "-c:a", "aac", "-b:a", "192k", "-t", (n / fps).toFixed(3), dst]);
 
 // quality check: frozen picture, black frames, final loudness

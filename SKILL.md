@@ -34,6 +34,7 @@ Ses dosyası mesajla geldiyse doğrudan 4. adıma geç (okunan metni de iste). Y
 - **Seslendirmem hazır** → ses + okunan metin → 4. adım.
 - **Metnim var** → metni 3. adımdaki kalıba göre sıkılaştır, seslendirme notlarıyla geri ver → ses gelince 4. adım.
 - **Fikir lazım** → 2. adım.
+- **Anlatımsız** (sadece müzik + efekt + kısa ekran yazıları) → hikâyeyi kur, çekim planına geç; zamanlama adımı yok (aşağıda "Anlatımsız mod").
 Süreyi de sor: varsayılan **30–40 sn**; 45–60 sn de olur.
 
 ### 2. On fikir
@@ -98,7 +99,7 @@ export function shot(f, S) {
 }
 ```
 
-**`shot` dönüşü:** `camera {pos, target, fov}` · `light`: `day | golden | night | interior | dramatic` · `actors [{id, pos, state, flip, scale, yaw, shadow}]` (kart kameraya döner) · `effects [{kind, pos, size, t}]` · `caption`: verilmezse kelime zamanından otomatik; `false` kapatır; metin verilirse o yazılır · `flash`, `fade` (0..1) · `overlay(g, w, h, f)` (2D çizim: isim kartı, tarih yazısı) · `before(f, S)` (render'dan hemen önce, hareketli nesneler için).
+**`shot` dönüşü:** `camera {pos, target, fov}` · `light`: `day | golden | night | interior | dramatic` · `actors [{id, pos, state, flip, scale, yaw, shadow}]` (kart kameraya döner) · `effects [{kind, pos, size, t}]` · `caption`: verilmezse kelime zamanından otomatik; `false` kapatır; metin ya da `{text, age}` verilirse o yazılır (`age` saniye: yeni yazının küçük zıplaması için) · `flash`, `fade` (0..1) · `overlay(g, w, h, f)` (2D çizim: isim kartı, tarih yazısı) · `before(f, S)` (render'dan hemen önce, hareketli nesneler için).
 
 **Dünya (metre, y yukarı, kamera genelde -z'ye bakar):**
 `S.box(w,h,d, renk|malzeme|[6 malzeme], [x,y,z], {rot, parent, outline})` (y = taban) · `S.cyl(rÜst, rAlt, h, …)` · `S.ball(r, …, {squash})` · `S.cone(r, h, …)` · `S.card(w, h, …)` · `S.group([x,y,z], rot)` · `S.mat("#renk", {map, glow})` · `S.ground(doku, boyut)` · `S.building(x, z, {w, d, floors, wall, roof, rot, sign:{text,bg,fg}, shutter, flat})` · `S.row(x0, x1, z, {seed, rot, floors})` · `S.street({len, width, z})` · `S.lamp(x, z, {on})` · `S.tree(x, z, {s, type: round|pine})` · `S.bush` · `S.cloud(x, y, z, s)` · `S.hills(z)` · `S.sign("YAZI", w, h, [x,y,z], {bg, fg, sub, rot})` · `S.fence(x0, x1, z)` · `S.bench(x, z, rot)` · `S.crate` · `S.barrel` · `S.room({w, d, h, wall, floor, at, window})`.
@@ -106,7 +107,7 @@ Kule, köprü, gemi, saray gibi özel yapıları kutu/silindir/koni ile kur, `gr
 **Dokular `S.tex`:** `paper(renk, seed, tekrar)`, `cobble(seed, tekrar, renk)`, `facade({wall, trim, glass, shutter, floors, cols, door, sign, meters})`, `tiles(renk)`, `signboard(yazı, {bg, fg, sub})`, `shade(renk, k)`, `makeCanvas`, `toTexture` (kendi tablonu/gazeteni CanvasTexture olarak çiz).
 
 **Karakter `S.actor(id, spec)`:** `accent` (atkı rengi), `scarf:false`, `head` (kafa rengi), `hat: cap|beanie|top|bowler|fez|straw|crown|hood`, `hatColor`, `hair: tuft|bun|long|spiky`, `hairColor`, `moustache`, `beard`, `glasses`, `build: adult|kid|tall`.
-**Durum `state`:** `face`: neutral happy laugh shock angry sad think smug scared sleep wow nervous · `arms`: down hips up cheer point wave shrug think cross present hold scared facepalm reach (ya da 4 açı: `[solÜst, solAlt, sağÜst, sağAlt]`) · `legs`: stand walk run sit jump + `phase` (0..1 adım döngüsü) · `look` (-1..1 bakış) · `blink` · `talk` (0..1 ağız) · `lean` · `headTilt` (derece) · `sweat` · `blush` · `wind` (atkı) · `prop: {kind: lantern|paper|coin|phone|sign|magnifier, text}` (sağ elde).
+**Durum `state`:** `face`: neutral happy laugh shock angry sad think smug scared sleep wow nervous · `arms`: down hips up cheer point wave shrug think cross present hold scared facepalm reach (ya da 4 açı: `[solÜst, solAlt, sağÜst, sağAlt]`) · `legs`: stand walk run sit jump + `phase` (0..1 adım döngüsü) · `look` (-1..1 bakış) · `blink` · `talk` (0..1 ağız) · `lean` · `headTilt` (derece) · `sweat` · `blush` · `wind` (atkı) · `prop: {kind: lantern|paper|coin|phone|sign|magnifier|simit|ring|bread, text, color}` (sağ elde).
 **Efektler:** exclaim question stars sparkle idea sweat hearts zzz anger burst(`text`) coin note.
 **Yardımcılar:** `S.cam(f, keys)` (yumuşak kamera, hafif nefes) · `S.track(f, [{f, v:[x,y,z]}])` (yürüyüş yolu) · `S.span(f, f0, f1)` (0..1) · `S.pick(f, [{from,…}])` · `S.sentences` ({from, to, text}) · `S.wordAt("kelime")` (karesi) · `S.wordFrame(i)` · `S.talking(f, f0, f1)` · `S.blink(f, tohum)` · `S.idle(f, tohum)` · `S.clamp`.
 
@@ -127,6 +128,7 @@ Sayfaya **bak** ve düzelt: kamera duvar içinde mi, yüz kadrajda mı, karakter
   "sfx": [ { "t": 0.2, "kind": "whoosh" }, { "t": 6.1, "kind": "coin" }, { "t": 11.3, "kind": "thud", "gain": -3 } ],
   "tail": 0.8 }
 ```
+**Anlatımsız mod:** `"voice": null` ve `"duration": <saniye>` yaz; müzik konuşma seviyesine çıkar, hiçbir şey kısılmaz. `story.js`te `config.seconds` aynı süre olsun ve yazılar `caption` ile kare aralıklarına göre verilsin (ör. `[[6,112,"Pazar sabahı"], …]`). Hikâye yazısız da anlaşılmalı: yazı sadece vuruşu güçlendirir.
 Ruh hali: `playful` (oyuncu, sinsi), `mystery`, `tense`, `warm`, `epic`. Efektler: pop boing whoosh swish ding bell thud tick click sparkle magic coin sting impact splash footsteps drumroll riser gasp. Zamanlar saniye (kare / 30). `node <skill>/tools/sound.mjs <proje>` → `work/mix.wav`. Görüntü zamanlaması değişirse sesi yeniden üret.
 
 ### 10. Render ve bitir

@@ -106,10 +106,13 @@ const SFX = {
 };
 
 // ---- mix
-const voiceFile = path.resolve(proj, cfg.voice ?? "voice.mp3");
-const voice = decode(voiceFile);
-const total = voice.length / SR + (cfg.tail ?? 0.8);
+// silent mode: "voice": null and "duration": seconds → music + effects only (the music sits at speech level then)
+const silent = cfg.voice === null || cfg.voice === false;
+if (silent && !cfg.duration) throw new Error('sound.json: with "voice": null, give "duration" in seconds');
+const voice = silent ? new Float32Array(0) : decode(path.resolve(proj, cfg.voice ?? "voice.mp3"));
+const total = silent ? cfg.duration : voice.length / SR + (cfg.tail ?? 0.8);
 const N = Math.ceil(total * SR);
+if (silent && cfg.music) cfg.music.level ??= -4;
 
 // voice to a steady speaking level (about -20 dBFS RMS over its active parts)
 let sum = 0, cnt = 0;
@@ -144,4 +147,4 @@ for (let i = 0; i < N; i++) {
 }
 fs.mkdirSync(path.join(proj, "work"), { recursive: true });
 fs.writeFileSync(path.join(proj, "work", "mix.wav"), out);
-console.log(`mix.wav · ${total.toFixed(2)} s · music: ${cfg.music?.mood ?? "none"} · ${(cfg.sfx ?? []).length} sfx · peak ${(20 * Math.log10(peak)).toFixed(1)} dBFS`);
+console.log(`mix.wav · ${silent ? "silent (no voice) · " : ""}${total.toFixed(2)} s · music: ${cfg.music?.mood ?? "none"} · ${(cfg.sfx ?? []).length} sfx · peak ${(20 * Math.log10(peak)).toFixed(1)} dBFS`);
