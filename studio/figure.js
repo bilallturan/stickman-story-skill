@@ -139,6 +139,10 @@ function drawLines(g, W, H, spec = {}, st = {}) {
     const a = (run ? 14 : 9) * k;
     arms0 = [12 + a * Math.sin(phase), run ? -60 * k + 4 * (1 - k) : 6 + 14 * k * Math.max(0, -Math.sin(phase)), 12 - a * Math.sin(phase), run ? -60 * k + 4 * (1 - k) : 6 + 14 * k * Math.max(0, Math.sin(phase))];
   }
+  if (!legLp && st.legs === "sit" && !side) {              // sitting, seen from the front: the thighs come toward the
+    hip = [0, L * 0.55];                                     // camera (they look short), the shins hang straight down
+    legLp = [hip, [-0.1, hip[1] - 0.05], [-0.12, 0]]; legRp = [hip, [0.1, hip[1] - 0.05], [0.12, 0]];
+  }
   if (!legLp) {                                             // standing, sitting, jumping: posed by angles
     let legL, legR, extraLift = 0;
     if (st.legs === "jump") { legL = [20, side ? -70 : 35]; legR = [side ? -10 : 20, side ? -40 : 35]; extraLift = 0.14; }

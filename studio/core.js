@@ -122,7 +122,10 @@ export async function createStudio({ width = 1080, height = 1920, look = "paper"
   // who: list of [x,y,z] or { pos, scale, build, crop } (crop: share of the figure height that may be cut at the bottom,
   // e.g. 0.45 for a waist-up shot). from: direction from the group to the camera ([0, 0.3, 1] = in front, a bit above).
   // pad: free margin at the edges (0.1 = 10 %). Returns { pos, target, fov } for shot().camera or S.cam keys.
-  S.fit = (who, { from = [0, 0.3, 1], fov = 36, pad = 0.1, crop = 0, minDist = 1.5 } = {}) => {
+  // bounds: [[x0,y0,z0],[x1,y1,z1]] — the camera must stay inside this box (a room). When the room is too small to
+  // step back far enough, the lens gets wider instead (up to 100°), so nobody is cut and the camera never ends up
+  // behind a wall.
+  S.fit = (who, { from = [0, 0.3, 1], fov = 36, pad = 0.1, crop = 0, minDist = 1.5, bounds = null } = {}) => {
     const V = (a) => new THREE.Vector3(...a);
     const back = V(from).normalize(), fw = back.clone().negate();
     const right = new THREE.Vector3().crossVectors(fw, new THREE.Vector3(0, 1, 0)).normalize();
@@ -133,17 +136,30 @@ export async function createStudio({ width = 1080, height = 1920, look = "paper"
       const y0 = h * (o.crop ?? crop);
       for (const dx of [-r, r]) for (const dz of [-r, r]) for (const y of [y0, h]) pts.push(V(o.pos).add(new THREE.Vector3(dx, y, dz)));
     }
-    const tanV = Math.tan((fov / 2) * Math.PI / 180) * (1 - pad), tanH = tanV * (width / height);
-    let target = pts.reduce((s, q) => s.add(q), new THREE.Vector3()).multiplyScalar(1 / pts.length), d = minDist;
-    for (let pass = 0; pass < 3; pass++) {
-      d = minDist;
-      for (const q of pts) { const rel = q.clone().sub(target), z = rel.dot(fw); d = Math.max(d, Math.abs(rel.dot(right)) / tanH - z, Math.abs(rel.dot(up)) / tanV - z); }
-      // re-centre: shift the target so the projected extents sit symmetric in the picture
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      for (const q of pts) { const rel = q.clone().sub(target), z = d + rel.dot(fw), sx = rel.dot(right) / z, sy = rel.dot(up) / z; x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy); }
-      target.addScaledVector(right, ((x0 + x1) / 2) * d).addScaledVector(up, ((y0 + y1) / 2) * d);
-    }
-    return { pos: target.clone().addScaledVector(back, d).toArray(), target: target.toArray(), fov };
+    const solve = (lens) => {
+      const tanV = Math.tan((lens / 2) * Math.PI / 180) * (1 - pad), tanH = tanV * (width / height);
+      let target = pts.reduce((s, q) => s.add(q), new THREE.Vector3()).multiplyScalar(1 / pts.length), d = minDist;
+      for (let pass = 0; pass < 3; pass++) {
+        d = minDist;
+        for (const q of pts) { const rel = q.clone().sub(target), z = rel.dot(fw); d = Math.max(d, Math.abs(rel.dot(right)) / tanH - z, Math.abs(rel.dot(up)) / tanV - z); }
+        // re-centre: shift the target so the projected extents sit symmetric in the picture
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const q of pts) { const rel = q.clone().sub(target), z = d + rel.dot(fw), sx = rel.dot(right) / z, sy = rel.dot(up) / z; x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy); }
+        target.addScaledVector(right, ((x0 + x1) / 2) * d).addScaledVector(up, ((y0 + y1) / 2) * d);
+      }
+      return { target, d };
+    };
+    // how far the camera can step back from the target before it leaves the bounds
+    const room = (target) => {
+      if (!bounds) return Infinity;
+      let t = Infinity;
+      for (let i = 0; i < 3; i++) { const b = back.getComponent(i), p = target.getComponent(i); if (Math.abs(b) > 1e-6) t = Math.min(t, ((b > 0 ? bounds[1][i] : bounds[0][i]) - p) / b); }
+      return Math.max(0.3, t - 0.05);
+    };
+    let lens = fov, s = solve(lens);
+    while (s.d > room(s.target) && lens < 100) { lens += 2; s = solve(lens); }
+    const d = Math.min(s.d, room(s.target));
+    return { pos: s.target.clone().addScaledVector(back, d).toArray(), target: s.target.toArray(), fov: lens };
   };
   S.pick = (f, list) => { let cur = list[0]; for (const s of list) if (f >= s.from) cur = s; return cur; };   // active entry of [{ from, ... }]
   S.sentences = [];
@@ -253,8 +269,10 @@ export async function createStudio({ width = 1080, height = 1920, look = "paper"
       if (info?.ext) {
         const e = info.ext, k = flip ? -1 : 1, base = new THREE.Vector3(...it.pos);
         const at = (x, y) => base.clone().addScaledVector(camRight, x * k * sc).add(new THREE.Vector3(0, y * sc, 0)).project(camera);
-        const L = at(k > 0 ? e.minX : e.maxX, 1.1), Rt = at(k > 0 ? e.maxX : e.minX, 1.1), T = at(0, e.top), B = at(0, 0.3);
-        const xs = [L.x, Rt.x], inView = Math.max(...xs) > -1 && Math.min(...xs) < 1 && T.y > -1 && B.y < 1 && T.z < 1;
+        // sides measured at feet, waist and head height: with a camera looking down or up, verticals lean in the picture
+        const T = at(0, e.top), B = at(0, 0.3);
+        const xs = [0.3, 1.1, e.top * 0.92].flatMap((y) => [at(k > 0 ? e.minX : e.maxX, y).x, at(k > 0 ? e.maxX : e.minX, y).x]);
+        const inView = Math.max(...xs) > -1 && Math.min(...xs) < 1 && T.y > -1 && B.y < 1 && T.z < 1;
         if (inView) {
           const edges = [];
           if (!it.edgeOk && Math.min(...xs) < -1) edges.push("left");
@@ -268,6 +286,15 @@ export async function createStudio({ width = 1080, height = 1920, look = "paper"
               for (const b of solids()) if (px > b.min.x + m && px < b.max.x - m && py > b.min.y + m && py < b.max.y - m && pz > b.min.z + m && pz < b.max.z - m) { hit = true; break; }
             }
             if (hit) edges.push("prop");
+          }
+          if (!it.hiddenOk && e.head) {                       // head and chest both blocked by a prop (behind a column, a wall)
+            const cam = camera.position, ray = new THREE.Ray(), hitP = new THREE.Vector3();
+            const blocked = (y) => {
+              const p = new THREE.Vector3(it.pos[0], it.pos[1] + y * sc, it.pos[2]), dist = p.distanceTo(cam);
+              ray.set(cam, p.clone().sub(cam).normalize());
+              return solids().some((b) => !b.containsPoint(cam) && ray.intersectBox(b, hitP) && hitP.distanceTo(cam) < dist - 0.3);
+            };
+            if (blocked(e.head[1]) && blocked(1.0)) edges.push("hidden");
           }
           if (capBox && e.head) {                             // the one-word caption sits on the face
             const hc = at(e.head[0], e.head[1]), hr = Math.abs(at(e.head[0], e.head[1] + e.head[2]).y - hc.y);

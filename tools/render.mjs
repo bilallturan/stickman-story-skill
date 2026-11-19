@@ -55,7 +55,7 @@ if (project) {
   if (todo.length === frames && step === 1) { fs.writeFileSync(path.join(project, "work", "steps.json"), JSON.stringify(steps)); console.log(`steps: ${steps.length} foot contacts → work/steps.json`); }
 }
 if (Object.keys(summary).length) {
-  console.log("FRAMING: (left/right/top = character cut by the frame edge; caption = the one-word caption sits on a face)");
+  console.log("FRAMING: (left/right/top = cut by the frame edge; caption = the caption sits on a face; prop = card cuts into an object; hidden = behind an object)");
   console.log("  fix the camera (S.fit) or the positions; mark a real entrance/exit with edgeOk: true");
   for (const [k, v] of Object.entries(summary)) console.log(`  ${k}: frames ${v.join(", ")}`);
 }
