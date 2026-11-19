@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>stickman-story studio</title>
+<style>
+  @font-face { font-family: Fredoka; src: url(fonts/Fredoka.ttf); font-weight: 300 700; }
+  html, body { margin: 0; background: #111; }
+  #preview { width: 360px; height: 640px; display: block; }
+</style>
+<script type="importmap">{ "imports": { "three": "/node_modules/three/build/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="preview" width="1080" height="1920"></canvas>
+<script type="module">
+// ?story=<url of story module>&words=<url of words.json>&look=paper|ink   (all extra params reach the story as S.params)
+import { createStudio } from "./core.js";
+const q = new URLSearchParams(location.search);
+await document.fonts.load("600 40px Fredoka");
+const story = await import(q.get("story"));
+let words = [];
+if (q.get("words")) { try { const r = await fetch(q.get("words")); if (r.ok) words = await r.json(); } catch {} }
+const look = q.get("look") || story.config?.look || "paper";
+const S = await createStudio({ story, words, look, params: Object.fromEntries(q) });
+const fps = S.fps;
+const frames = story.config?.frames ?? (story.config?.seconds ? Math.round(story.config.seconds * fps) : words.length ? Math.ceil((words.at(-1).end + 0.8) * fps) : fps * 5);
+window.META = { fps, frames, w: S.width, h: S.height, look };
+const pv = document.getElementById("preview").getContext("2d");
+window.renderFrame = (f) => { const out = S.render(f); pv.drawImage(out, 0, 0); return out.toDataURL("image/jpeg", 0.92); };
+window.READY = true;
+</script>
+</body>
+</html>

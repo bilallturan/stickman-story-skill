@@ -1,0 +1,27 @@
+{
+  "name": "stickman-story-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code skill: narrated vertical stickman story shorts, rendered entirely with code",
+  "license": "MIT",
+  "dependencies": {
+    "playwright-core": "^1.65.1",
+    "three": "^0.187.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "new": "node tools/new.mjs",
+    "render": "node tools/render.mjs",
+    "sheet": "node tools/sheet.mjs",
+    "sound": "node tools/sound.mjs",
+    "finish": "node tools/finish.mjs",
+    "style-test": "node tools/render.mjs tests/style-test.js --frames 0 --out out/style"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bilallturan/stickman-story-skill"
+  }
+}
