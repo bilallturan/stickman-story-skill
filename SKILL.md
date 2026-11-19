@@ -87,19 +87,20 @@ export function setup(S) {
   S.street({ len: 160, width: 6 }); S.row(-40, 40, -9.5, { seed: 4 }); S.hills(-80);
   S.actor("ali", { accent: "#d97757", hat: "fez", moustache: true });
 }
-const SHOTS = [ { from: 0, cam: { pos: [0, 1.6, 3.4], target: [0, 1.4, 0], fov: 36 } }, /* … */ ];
+const PATH = [{ f: 0, v: [-2, 0, -1] }, { f: 60, v: [0, 0, -2] }];   // ~1,1 m/sn yürüyüş
 export function shot(f, S) {
-  const sh = S.pick(f, SHOTS);
+  const w = S.walk(f, PATH, { who: "ali" });                    // konum + adım + yön, ayak kaymaz
+  const cam = (pad) => S.fit([PATH[0].v, PATH.at(-1).v], { from: [0.8, 0.3, 0.6], fov: 40, pad });   // herkes kadrajda
   return {
     light: "golden",
-    camera: S.cam(f, [{ f: sh.from, ...sh.cam }, { f: sh.from + 90, ...sh.cam, pos: [0, 1.6, 3.0] }]),
-    actors: [{ id: "ali", pos: [0, 0, 0], state: { face: "smug", arms: "point", talk: S.talking(f, 0, 60), blink: S.blink(f, 1), ...S.idle(f, 1) } }],
-    effects: [{ kind: "exclaim", pos: [0.4, 2.2, 0], size: 0.5, t: S.clamp((f - 30) / 20) }],
+    camera: S.cam(f, [{ f: 0, ...cam(0.1) }, { f: 90, ...cam(0.05) }]),
+    actors: [{ id: "ali", pos: w.pos, dir: w.dir, state: { ...w.state, face: "smug", blink: S.blink(f, 1) } }],
+    effects: [{ kind: "exclaim", pos: [0.3, 2.2, -2], size: 0.5, t: S.clamp((f - 60) / 20) }],
   };
 }
 ```
 
-**`shot` dönüşü:** `camera {pos, target, fov}` · `light`: `day | golden | night | interior | dramatic` · `actors [{id, pos, state, flip, scale, yaw, shadow}]` (kart kameraya döner) · `effects [{kind, pos, size, t}]` · `caption`: verilmezse kelime zamanından otomatik; `false` kapatır; metin ya da `{text, age}` verilirse o yazılır (`age` saniye: yeni yazının küçük zıplaması için) · `flash`, `fade` (0..1) · `overlay(g, w, h, f)` (2D çizim: isim kartı, tarih yazısı) · `before(f, S)` (render'dan hemen önce, hareketli nesneler için).
+**`shot` dönüşü:** `camera {pos, target, fov}` · `light`: `day | golden | night | interior | dramatic` · `actors [{id, pos, state, dir, flip, scale, yaw, shadow, edgeOk, touchOk}]` (kart kameraya döner; `dir` yürüme yönü: profilde yüzü o yöne çevirir; `edgeOk` gerçek bir giriş/çıkışta kenar uyarısını kapatır; `touchOk` banka oturma gibi bir nesneye bilerek değmeyi izinli yapar) · `effects [{kind, pos, size, t}]` · `caption`: verilmezse kelime zamanından otomatik; `false` kapatır; metin ya da `{text, age}` verilirse o yazılır (`age` saniye: yeni yazının küçük zıplaması için) · `flash`, `fade` (0..1) · `overlay(g, w, h, f)` (2D çizim: isim kartı, tarih yazısı) · `before(f, S)` (render'dan hemen önce, hareketli nesneler için).
 
 **Dünya (metre, y yukarı, kamera genelde -z'ye bakar):**
 `S.box(w,h,d, renk|malzeme|[6 malzeme], [x,y,z], {rot, parent, outline})` (y = taban) · `S.cyl(rÜst, rAlt, h, …)` · `S.ball(r, …, {squash})` · `S.cone(r, h, …)` · `S.card(w, h, …)` · `S.group([x,y,z], rot)` · `S.mat("#renk", {map, glow})` · `S.ground(doku, boyut)` · `S.building(x, z, {w, d, floors, wall, roof, rot, sign:{text,bg,fg}, shutter, flat})` · `S.row(x0, x1, z, {seed, rot, floors})` · `S.street({len, width, z})` · `S.lamp(x, z, {on})` · `S.tree(x, z, {s, type: round|pine})` · `S.bush` · `S.cloud(x, y, z, s)` · `S.hills(z)` · `S.sign("YAZI", w, h, [x,y,z], {bg, fg, sub, rot})` · `S.fence(x0, x1, z)` · `S.bench(x, z, rot)` · `S.crate` · `S.barrel` · `S.room({w, d, h, wall, floor, at, window})`.
@@ -107,18 +108,36 @@ Kule, köprü, gemi, saray gibi özel yapıları kutu/silindir/koni ile kur, `gr
 **Dokular `S.tex`:** `paper(renk, seed, tekrar)`, `cobble(seed, tekrar, renk)`, `facade({wall, trim, glass, shutter, floors, cols, door, sign, meters})`, `tiles(renk)`, `signboard(yazı, {bg, fg, sub})`, `shade(renk, k)`, `makeCanvas`, `toTexture` (kendi tablonu/gazeteni CanvasTexture olarak çiz).
 
 **Karakter `S.actor(id, spec)`:** `accent` (atkı rengi), `scarf:false`, `head` (kafa rengi), `hat: cap|beanie|top|bowler|fez|straw|crown|hood`, `hatColor`, `hair: tuft|bun|long|spiky`, `hairColor`, `moustache`, `beard`, `glasses`, `build: adult|kid|tall`.
-**Durum `state`:** `face`: neutral happy laugh shock angry sad think smug scared sleep wow nervous · `arms`: down hips up cheer point wave shrug think cross present hold scared facepalm reach (ya da 4 açı: `[solÜst, solAlt, sağÜst, sağAlt]`) · `legs`: stand walk run sit jump + `phase` (0..1 adım döngüsü) · `look` (-1..1 bakış) · `blink` · `talk` (0..1 ağız) · `lean` · `headTilt` (derece) · `sweat` · `blush` · `wind` (atkı) · `prop: {kind: lantern|paper|coin|phone|sign|magnifier|simit|ring|bread, text, color}` (sağ elde).
+**Durum `state`:** `face`: neutral happy laugh shock angry sad think smug scared sleep wow nervous · `arms`: down hips up cheer point wave shrug think cross present hold scared facepalm reach (ya da 4 açı: `[solÜst, solAlt, sağÜst, sağAlt]`) · `legs`: stand walk run sit jump + `phase` (0..1 adım döngüsü; yürüyüşte elle verme, `S.walk` versin) · `view`: front (kameraya dönük) | side (profil) | back (arkası dönük, yüz yok) | auto (yürüme yönünden) · `look` (-1..1 bakış) · `blink` · `talk` (0..1 ağız) · `lean` · `headTilt` (derece) · `sweat` · `blush` · `wind` (atkı) · `prop: {kind: lantern|paper|coin|phone|sign|magnifier|simit|ring|bread, text, color}` (sağ elde).
 **Efektler:** exclaim question stars sparkle idea sweat hearts zzz anger burst(`text`) coin note.
-**Yardımcılar:** `S.cam(f, keys)` (yumuşak kamera, hafif nefes) · `S.track(f, [{f, v:[x,y,z]}])` (yürüyüş yolu) · `S.span(f, f0, f1)` (0..1) · `S.pick(f, [{from,…}])` · `S.sentences` ({from, to, text}) · `S.wordAt("kelime")` (karesi) · `S.wordFrame(i)` · `S.talking(f, f0, f1)` · `S.blink(f, tohum)` · `S.idle(f, tohum)` · `S.clamp`.
+**Yardımcılar:** `S.walk(f, [{f, v:[x,y,z], pass}], {who, run, scale})` → `{pos, dir, state}` (yürüyüş ve koşu: adım uzunluğu karakterin boyundan, adım fazı yürünen yoldan gelir, ayak yerde kaymaz; durup kalkarken yumuşak geçiş; aynı noktayı tekrar yazmak beklemek demek; `pass: true` köşeden yavaşlamadan geçer) · `S.fit([konum | {pos, crop, scale, build}], {from, fov, pad})` → kamera (listedeki herkesi tam kadraja alır; `crop` 0,4 = belden yukarı yakın plan; kadraja boş bir yer de koyabilirsin, ör. boş kalan sıra) · `S.floor(x, z)` (o noktadaki basılacak yükseklik: kaldırımda 0,15) · `S.cam(f, keys)` (yumuşak kamera, hafif nefes; anahtarlara `S.fit` sonucu da verilir) · `S.track(f, [{f, v:[x,y,z]}])` (kayan nesneler için; karakter yürütmek için değil) · `S.span(f, f0, f1)` (0..1) · `S.pick(f, [{from,…}])` · `S.sentences` ({from, to, text}) · `S.wordAt("kelime")` (karesi) · `S.wordFrame(i)` · `S.talking(f, f0, f1)` · `S.blink(f, tohum)` · `S.idle(f, tohum)` · `S.clamp`.
 
-İpuçları: Dikey kadraj dardır; 4 m uzaktan yatayda sadece ±0,9 m görünür, karakterleri derinliğe diz. Geniş planda kamera 2–3 m yükseklikte, yakın planda göz hizasında (1,4–1,6 m). Kamera bina ya da ağaç içinden geçmesin (`ink` görünümünde içeride kalan kamera ekranı siyaha boğar). Her çekimde bir şey kıpırdasın: göz kırpma, nefes, atkı, efekt, kamera.
+**Hareket ve yerleşim kuralları (her hikâyede):**
+- **Yürüyüş hep `S.walk` ile.** `phase: f/20` gibi elle verilen faz ayakları kaydırır, absürt görünür. Normal hız yürüyüşte 1,0–1,4 m/sn, yaşlı biri 0,8–0,9, koşu 2,5–4. Köşe gerekiyorsa ara noktaya `pass: true` yaz, kare sayısını parça uzunluğuyla orantılı ver.
+- **Profil en iyi okunan yürüyüştür.** `view: "auto"` yol kameraya neredeyse dik gelmiyorsa (20°'den geniş) profil seçer. Duran karakter yürüdüğü yöne bakmaya devam eder; kameraya bakmasını istiyorsan `view: "front"` ver.
+- **Dikey kadrajda yan yana dizme, derinliğe diz.** 9:16 karede yan yana üç kişi ya küçülür ya kesilir. Sırayı, grubu, yürüyüş yolunu kameradan uzaklaşan bir çizgiye koy; kamerayı o çizgi boyunca baktır (`from` ile).
+- **Kamerayı `S.fit` ile kur.** Elle konum yazıyorsan `--check` mutlaka geçsin. Kamera kayarken bir karakterin yarısı kenarda kalıyorsa ya o karakteri baştan kadraja al ya da kes (cut).
+- **Kartlar düzdür:** karakteri bir nesneye (araba, tezgâh, duvar) 0,4 m'den fazla yaklaştırma, kart nesnenin içine girer ve bacak/kol kaybolur. Yükseltinin (kaldırım, sahne) üstünde duran karakterin `pos` y'si `S.floor(x, z)` olsun.
+- **Sürprizi erken verme.** Sonda ortaya çıkacak tabela, nesne ya da kişi önceki çekimlerin kenarında bile görünmesin; kamerayı ona göre çevir.
+Geniş planda kamera 2–3 m yükseklikte, yakın planda göz hizasında (1,4–1,6 m). Kamera bina ya da ağaç içinden geçmesin (`ink` görünümünde içeride kalan kamera ekranı siyaha boğar). Her çekimde bir şey kıpırdasın: göz kırpma, nefes, atkı, efekt, kamera.
 
-### 8. Kontrol (uzun render'dan önce)
+### 8. Kontrol (uzun render'dan önce, zorunlu)
+**a) Otomatik kare kare kontrol** (bütün kareler, resim kaydetmeden, birkaç dakika):
 ```
-node <skill>/tools/render.mjs <proje> --frames 0-99999:30 --out <proje>/stills
+node <skill>/tools/render.mjs <proje> --check
+```
+Her karede bakar ve kare aralıklarıyla yazar:
+- `left / right / top`: karakter kadraj kenarında yarım kalmış,
+- `caption`: tek kelimelik altyazı bir yüzün üstüne biniyor,
+- `prop`: karakterin kartı bir nesnenin içine girmiş (araba, duvar, kaldırım).
+Rapor temiz çıkana kadar düzelt (kamera `S.fit`, konum, yol). `edgeOk` / `touchOk` sadece gerçekten bilerek yapılan anlarda. Aynı geçiş ayak basışlarını da `work/steps.json`a yazar (bkz. 9. adım).
+
+**b) Gözle kare kare kontrol.** Otomatik kontrol her şeyi görmez (yürüyüşün doğallığı, sürprizin erken görünmesi, boş kadraj, yanlış yöne bakış):
+```
+node <skill>/tools/render.mjs <proje> --frames 0-99999:6 --out <proje>/stills
 node <skill>/tools/sheet.mjs <proje>/stills
 ```
-Sayfaya **bak** ve düzelt: kamera duvar içinde mi, yüz kadrajda mı, karakter direğin arkasında mı, yazı ters mi, kadraj boş mu, altyazı yüzün üstüne mi biniyor. Sayfayı kullanıcıya tek satırlık çekim özetiyle göster, sonra tam render'a geç.
+Yürüyüş olan çekimlerde daha sık bak (her 2–4 kare). Şüpheli bir karenin tam boy halini kırp ve bak. Bakılacaklar: ayak yerde mi, adım doğal mı, karakter "kayıyor" mu, kamera duvar içinde mi, yüz kadrajda mı, karakter direğin arkasında mı, yazı ters mi, kadraj boş mu, sonda ortaya çıkacak şey önceden görünüyor mu. Sayfayı kullanıcıya tek satırlık çekim özetiyle göster, sonra tam render'a geç.
 
 ### 9. Ses
 `<proje>/sound.json`:
@@ -126,10 +145,12 @@ Sayfaya **bak** ve düzelt: kamera duvar içinde mi, yüz kadrajda mı, karakter
 { "voice": "voice.mp3",
   "music": { "mood": "playful", "bpm": 104, "level": -17, "start": 0, "end": 31.2, "sting": true },
   "sfx": [ { "t": 0.2, "kind": "whoosh" }, { "t": 6.1, "kind": "coin" }, { "t": 11.3, "kind": "thud", "gain": -3 } ],
+  "steps": { "gain": -8 },
   "tail": 0.8 }
 ```
+`"steps"`: kadrajdaki her yürüyen karakterin ayağı yere bastığı anda tek bir yumuşak adım sesi koyar (`render.mjs --check`in yazdığı `work/steps.json`dan). Elle `footsteps` koyma; yürüyüş değişirse önce `--check`, sonra ses.
 **Anlatımsız mod:** `"voice": null` ve `"duration": <saniye>` yaz; müzik konuşma seviyesine çıkar, hiçbir şey kısılmaz. `story.js`te `config.seconds` aynı süre olsun ve yazılar `caption` ile kare aralıklarına göre verilsin (ör. `[[6,112,"Pazar sabahı"], …]`). Hikâye yazısız da anlaşılmalı: yazı sadece vuruşu güçlendirir.
-Ruh hali: `playful` (oyuncu, sinsi), `mystery`, `tense`, `warm`, `epic`. Efektler: pop boing whoosh swish ding bell thud tick click sparkle magic coin sting impact splash footsteps drumroll riser gasp. Zamanlar saniye (kare / 30). `node <skill>/tools/sound.mjs <proje>` → `work/mix.wav`. Görüntü zamanlaması değişirse sesi yeniden üret.
+Ruh hali: `playful` (oyuncu, sinsi), `mystery`, `tense`, `warm`, `epic`. Efektler: pop boing whoosh swish ding bell thud tick click sparkle magic coin sting impact splash step footsteps drumroll riser gasp. Zamanlar saniye (kare / 30). `node <skill>/tools/sound.mjs <proje>` → `work/mix.wav`. Görüntü zamanlaması değişirse sesi yeniden üret.
 
 ### 10. Render ve bitir
 ```

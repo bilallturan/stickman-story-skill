@@ -10,10 +10,12 @@ export function seeded(seed = 1) {
   };
 }
 
-export function makeCanvas(w, h) {
+// cpu: a software canvas. Used for anything redrawn every frame and uploaded as a texture (characters, effects):
+// a GPU canvas can be copied to WebGL before its drawing has landed, which shows up now and then as a see-through figure.
+export function makeCanvas(w, h, { cpu = false } = {}) {
   const c = document.createElement("canvas");
   c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
-  return [c, c.getContext("2d")];
+  return [c, c.getContext("2d", cpu ? { willReadFrequently: true } : undefined)];
 }
 
 export function toTexture(c, repeat) {

@@ -19,6 +19,15 @@ const BODY = {
   tall:  { leg: 0.92, torso: 0.6, head: 0.24, arm: 0.34 },
 };
 export const FIGURE_HEIGHT = (build = "adult") => { const b = BODY[build] ?? BODY.adult; return b.leg + b.torso + 0.05 + b.head * 2; };
+// Natural ground covered by one full step cycle (left + right step), in the figure's own metres.
+export const strideFor = (build = "adult", run = false) => (BODY[build] ?? BODY.adult).leg * (run ? 2.3 : 1.45);
+
+// A two-segment limb posed by angles (degrees). front: + = away from the body (left limbs pass dir -1).
+// side: + = forward (+x) for every limb. Returns [root, joint, tip].
+function limbAt(from, dir, a1, a2, len) {
+  const j = [from[0] + dir * Math.sin(a1 * DEG) * len, from[1] - Math.cos(a1 * DEG) * len];
+  return [from, j, [j[0] + dir * Math.sin((a1 + a2) * DEG) * len, j[1] - Math.cos((a1 + a2) * DEG) * len]];
+}
 // The card a figure is drawn on: `size` metres tall (canvas height), feet `pad` metres above the card's bottom edge.
 export const CARD_PAD = 0.12;
 export const cardSize = (build = "adult") => FIGURE_HEIGHT(build) + 0.25 + CARD_PAD * 2;
@@ -53,7 +62,7 @@ function layer(name, W, H) {
   const l = layers[name];
   if (l && l[0].width === W && l[0].height === H) return l;
   const c = document.createElement("canvas"); c.width = W; c.height = H;
-  return (layers[name] = [c, c.getContext("2d")]);
+  return (layers[name] = [c, c.getContext("2d", { willReadFrequently: true })]);
 }
 
 function drawLines(g, W, H, spec = {}, st = {}) {
@@ -63,38 +72,101 @@ function drawLines(g, W, H, spec = {}, st = {}) {
   const lw = Math.max(3, 0.042 * s);
 
   // ---- skeleton
-  const phase = (st.phase ?? 0) * Math.PI * 2;
-  let lift = 0, legL, legR;
-  if (st.legs === "walk") { const k = Math.sin(phase); legL = [8 + 22 * k, Math.max(0, -28 * k)]; legR = [8 - 22 * k, Math.max(0, 28 * k)]; lift = Math.abs(Math.cos(phase)) * 0.02; }
-  else if (st.legs === "run") { const k = Math.sin(phase); legL = [10 + 42 * k, Math.max(0, -70 * k)]; legR = [10 - 42 * k, Math.max(0, 70 * k)]; lift = 0.04 + Math.abs(Math.cos(phase)) * 0.05; }
-  else if (st.legs === "jump") { legL = [25, 40]; legR = [25, 40]; lift = 0.12; }
-  else if (st.legs === "sit") { legL = [80, -85]; legR = [80, -85]; lift = -b.leg * 0.45; }
-  else { legL = [9, 0]; legR = [9, 0]; }
-  const lean = (st.lean ?? 0) * 0.14;
-  const hip = [0, b.leg + lift];
-  const shoulder = [hip[0] + lean, hip[1] + b.torso];
-  let arms = typeof st.arms === "string" ? ARM_POSES[st.arms] ?? ARM_POSES.down : st.arms ?? ARM_POSES.down;
-  if (st.legs === "walk" || st.legs === "run") {   // counter-swing when the arms are relaxed
-    const k = Math.sin(phase) * (st.legs === "run" ? 40 : 18);
-    if (!st.arms || st.arms === "down") arms = [12 - k, st.legs === "run" ? -70 : 4, 12 + k, st.legs === "run" ? -70 : 4];
-  }
-  if (st.arms === "wave") arms = [arms[0], arms[1], arms[2], arms[3] + Math.sin(phase * 3) * 25];
-  const limb = (from, side, a1, a2, len) => {
-    const d1 = [side * Math.sin(a1 * DEG), -Math.cos(a1 * DEG)];
-    const j = [from[0] + d1[0] * len, from[1] + d1[1] * len];
-    const d2 = [side * Math.sin((a1 + a2) * DEG), -Math.cos((a1 + a2) * DEG)];
-    return [from, j, [j[0] + d2[0] * len, j[1] + d2[1] * len]];
+  // view "front" (default) faces the camera, "back" is the same body without a face (walking away),
+  // "side" is a profile facing +x (the card is mirrored for the other way).
+  // Walk and run are planned from the feet. Each foot has a target for every moment of the cycle: while it carries
+  // weight it stays planted and slides back under the hip at body speed (heel first, then flat, then the heel peels
+  // off); while it swings it is lifted and carried forward. The knee is solved from the two equal leg bones, and the
+  // hip sits as high as the planted foot allows, so the body rises over the standing leg and dips when both feet
+  // are down. With the phase taken from the distance walked (S.walk) a planted foot keeps its spot on the ground.
+  const side = st.view === "side", dirL = side ? 1 : -1;
+  const p = (((st.phase ?? 0) % 1) + 1) % 1, phase = p * Math.PI * 2;
+  const L = b.leg, half = L / 2;
+  const moving = st.legs === "walk" || st.legs === "run";
+  const run = st.legs === "run";
+  const clamp01 = (x) => Math.min(1, Math.max(0, x)), ease = (x) => x * x * (3 - 2 * x);
+  // two equal bones from the hip to a foot target; bend +1 puts the knee towards +x
+  const solveLeg = (hip, foot, bend) => {
+    let dx = foot[0] - hip[0], dy = foot[1] - hip[1], d = Math.hypot(dx, dy) || 1e-6;
+    const most = L * 0.999;
+    if (d > most) { foot = [hip[0] + (dx / d) * most, hip[1] + (dy / d) * most]; dx = foot[0] - hip[0]; dy = foot[1] - hip[1]; d = most; }
+    const out = Math.sqrt(Math.max(0, half * half - (d * d) / 4));
+    let nx = -dy / d, ny = dx / d; if (nx * bend < 0) { nx = -nx; ny = -ny; }
+    return [hip, [hip[0] + dx / 2 + nx * out, hip[1] + dy / 2 + ny * out], foot];
   };
-  const armL = limb(shoulder, -1, arms[0], arms[1], b.arm), armR = limb(shoulder, 1, arms[2], arms[3], b.arm);
-  const legLp = limb(hip, -1, legL[0], legL[1], b.leg / 2), legRp = limb(hip, 1, legR[0], legR[1], b.leg / 2);
+  let legLp, legRp, hip, leanAuto = 0, arms0 = null, footTilt = [0, 0];
+  if (moving && side) {
+    const D = st.stride ?? strideFor(spec.build, run);        // ground covered by one full cycle (two steps)
+    const duty = run ? 0.36 : 0.6;                           // part of the cycle one foot is on the ground
+    const reach = (D * duty) / 2;                            // planted foot moves from +reach to -reach under the hip
+    const heelUp = (run ? 0.12 : 0.1) * L, strike = (run ? 0.03 : 0.04) * L;
+    const footAt = (u) => {                                  // u = this foot's own cycle, 0 = touch-down
+      if (u < duty) {
+        const s = u / duty, land = ease(clamp01(s / 0.15)), peel = ease(clamp01((s - 0.7) / 0.3));
+        return { x: reach * (1 - 2 * s), y: strike * (1 - land) + heelUp * peel, tilt: -0.22 * (1 - land) + 0.62 * peel, down: true };
+      }
+      const s = (u - duty) / (1 - duty);
+      const fwd = run ? ease(Math.pow(s, 1.35)) : ease(s);  // a running foot kicks up behind before it comes forward
+      const lift = run ? 0.42 * L * Math.sin(Math.PI * Math.pow(s, 0.62)) : 0.12 * L * Math.sin(Math.PI * Math.pow(s, 0.8));
+      return { x: -reach + 2 * reach * fwd, y: heelUp + (strike - heelUp) * s + lift, tilt: 0.62 + (-0.22 - 0.62) * ease(s), down: false };
+    };
+    const fL = footAt(p), fR = footAt((p + 0.5) % 1);
+    const fit = (f) => (f.down ? f.y + Math.sqrt(Math.max(0, (L * 0.995) ** 2 - f.x * f.x)) : Infinity);
+    const top = run ? L * (0.86 + 0.07 * (1 - Math.cos(4 * Math.PI * (p - duty / 2))) / 2) : L * 0.975;
+    // settle (0..1, from S.walk): blend toward the standing pose when a walk starts or ends
+    const k = ease(clamp01(st.settle ?? 0)), mix = (a, c) => a + (c - a) * k;
+    const stand = [0.042, -0.056];
+    hip = [0, mix(Math.min(top, fit(fL), fit(fR)), L * 0.995)];
+    legLp = solveLeg(hip, [mix(fL.x, stand[0]), mix(fL.y, 0)], 1); legRp = solveLeg(hip, [mix(fR.x, stand[1]), mix(fR.y, 0)], 1);
+    footTilt = [mix(fL.tilt, 0), mix(fR.tilt, 0)];
+    leanAuto = mix(run ? 0.35 : 0.08, 0);
+    // arms swing against the leg on the same side, a little more elbow bend on the forward swing
+    const swing = (f) => Math.max(-1, Math.min(1, f.x / reach));
+    const A = run ? 50 : 24, sL = -swing(fL), sR = -swing(fR), down = ARM_POSES.down;
+    arms0 = [mix(A * sL, down[0]), mix(run ? 85 : 12 + 14 * Math.max(0, sL), down[1]), mix(A * sR, down[2]), mix(run ? 85 : 12 + 14 * Math.max(0, sR), down[3])];
+  } else if (moving) {                                       // toward or away from the camera: the feet lift in turn
+    // seen from the front a step shows as: one foot lifts, the body rises over the standing leg and shifts onto it
+    const k = 1 - ease(clamp01(st.settle ?? 0));
+    const w = 0.085, liftH = (run ? 0.34 : 0.22) * L * k;
+    const yL = liftH * Math.max(0, Math.sin(phase)) ** 0.8, yR = liftH * Math.max(0, -Math.sin(phase)) ** 0.8;
+    const sway = Math.sin(phase) * 0.04 * k;                // weight shifts over the standing foot
+    const bob = (run ? 0.05 : 0.035) * L * k * (Math.abs(Math.sin(phase)) - 1);
+    const top = L * 0.975 + bob, fit = (x, y) => (y > 0.001 ? Infinity : Math.sqrt((L * 0.995) ** 2 - (x - sway) ** 2));
+    hip = [sway, Math.min(top, fit(-w, yL), fit(w, yR)) - (run ? 0.05 * L * k : 0)];
+    // a knee that comes toward the camera stays close to the hip–foot line in the picture (the leg just looks shorter)
+    const towardCam = (foot, out, lift) => [hip, [(hip[0] + foot[0]) / 2 + out * (0.012 + 0.05 * lift), (hip[1] + foot[1]) / 2], foot];
+    legLp = towardCam([-w, yL], -1, yL / L); legRp = towardCam([w, yR], 1, yR / L);
+    const a = (run ? 14 : 9) * k;
+    arms0 = [12 + a * Math.sin(phase), run ? -60 * k + 4 * (1 - k) : 6 + 14 * k * Math.max(0, -Math.sin(phase)), 12 - a * Math.sin(phase), run ? -60 * k + 4 * (1 - k) : 6 + 14 * k * Math.max(0, Math.sin(phase))];
+  }
+  if (!legLp) {                                             // standing, sitting, jumping: posed by angles
+    let legL, legR, extraLift = 0;
+    if (st.legs === "jump") { legL = [20, side ? -70 : 35]; legR = [side ? -10 : 20, side ? -40 : 35]; extraLift = 0.14; }
+    else if (st.legs === "sit") { legL = [80, -85]; legR = side ? [75, -80] : [80, -85]; }
+    else { legL = side ? [3, 0] : [9, 0]; legR = side ? [-4, 0] : [9, 0]; }
+    const drop = ([a1, a2]) => half * (Math.cos(a1 * DEG) + Math.cos((a1 + a2) * DEG));
+    hip = [0, st.legs === "sit" ? L * 0.55 : Math.max(drop(legL), drop(legR)) + extraLift];
+    legLp = limbAt(hip, dirL, legL[0], legL[1], half); legRp = limbAt(hip, 1, legR[0], legR[1], half);
+  }
+  const lean = ((st.lean ?? 0) + (side ? leanAuto : 0)) * 0.14 + (moving && !side ? hip[0] : 0);
+  const shoulder = [hip[0] + lean, hip[1] + b.torso * (moving && side ? 0.98 : 1)];
+  let arms = typeof st.arms === "string" ? ARM_POSES[st.arms] ?? ARM_POSES.down : st.arms ?? ARM_POSES.down;
+  if (arms0 && (!st.arms || st.arms === "down")) arms = arms0;   // relaxed arms follow the gait
+  if (st.arms === "wave") arms = [arms[0], arms[1], arms[2], arms[3] + Math.sin((st.t ?? 0) * 0.5) * 25];
+  const armL = limbAt(shoulder, dirL, arms[0], arms[1], b.arm), armR = limbAt(shoulder, 1, arms[2], arms[3], b.arm);
   const tilt = (st.headTilt ?? 0) * DEG;
-  const neck = [shoulder[0], shoulder[1] + 0.05];
-  const head = [neck[0] + Math.sin(tilt) * b.head, neck[1] + b.head * 0.95];
+  const neck = [shoulder[0] + (side ? 0.02 : 0), shoulder[1] + 0.05];
+  const head = [neck[0] + Math.sin(tilt) * b.head + (side ? 0.03 : 0), neck[1] + b.head * 0.95];
 
-  const lines = [[hip, shoulder], [shoulder, neck], armL, armR, legLp, legRp];
-  const path = (pts) => { g.beginPath(); pts.forEach((p, i) => { const [x, y] = P(...p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); };
+  // far side limbs (in profile) are drawn first and a little lighter so crossing legs stay readable
+  const far = side ? [armL, legLp] : [], near = side ? [armR, legRp] : [armL, armR, legLp, legRp];
+  const lines = [...far, [hip, shoulder], [shoulder, neck], ...near];
+  const path = (pts) => { g.beginPath(); pts.forEach((q, i) => { const [x, y] = P(...q); i ? g.lineTo(x, y) : g.moveTo(x, y); }); };
   const [hx, hy] = P(...head), R = b.head * s;
   g.lineCap = g.lineJoin = "round";
+  // extent of the drawn figure in metres (feet at 0,0): used by the framing check
+  const pts = [armL, armR, legLp, legRp].flat();
+  const ext = { minX: Math.min(head[0] - b.head, ...pts.map((q) => q[0])) - 0.06, maxX: Math.max(head[0] + b.head, ...pts.map((q) => q[0])) + 0.06, top: head[1] + b.head * (spec.hat ? 1.6 : 1.05), head: [head[0], head[1], b.head] };
 
   // ---- scarf (behind the head, over the body)
   if (spec.scarf !== false) {
@@ -111,11 +183,21 @@ function drawLines(g, W, H, spec = {}, st = {}) {
   }
 
   // ---- limbs
-  g.strokeStyle = "#1b1b1b"; g.lineWidth = lw;
-  lines.forEach((l) => { path(l); g.stroke(); });
-  g.fillStyle = "#1b1b1b";
-  [armL[2], armR[2]].forEach((p) => { const [x, y] = P(...p); g.beginPath(); g.arc(x, y, lw * 0.85, 0, 7); g.fill(); });
-  [legLp[2], legRp[2]].forEach((p, i) => { const [x, y] = P(...p); g.beginPath(); g.ellipse(x + (i ? 1 : -1) * lw * 0.8, y, lw * 1.3, lw * 0.75, 0, 0, 7); g.fill(); });
+  // side feet: flat when planted, toes down as the heel peels off, toes up just before touch-down (tilt from the gait)
+  const foot = (leg, dir, col, tilt = 0) => {
+    const [x, y] = P(...leg[2]);
+    if (!side) { g.fillStyle = col; g.beginPath(); g.ellipse(x + dir * lw * 0.8, y, lw * 1.3, lw * 0.75, 0, 0, 7); g.fill(); return; }
+    g.save(); g.translate(x, y); g.rotate(tilt); g.fillStyle = col;
+    g.beginPath(); g.ellipse(lw * 0.9, 0, lw * 1.45, lw * 0.72, 0, 0, 7); g.fill(); g.restore();
+  };
+  const hand = (arm, col) => { const [x, y] = P(...arm[2]); g.fillStyle = col; g.beginPath(); g.arc(x, y, lw * 0.85, 0, 7); g.fill(); };
+  const FAR = "#4a4744";
+  g.lineWidth = lw;
+  if (side) { g.strokeStyle = FAR; far.forEach((l) => { path(l); g.stroke(); }); foot(legLp, 1, FAR, footTilt[0]); hand(armL, FAR); }
+  g.strokeStyle = "#1b1b1b";
+  lines.slice(far.length).forEach((l) => { path(l); g.stroke(); });
+  if (side) { foot(legRp, 1, "#1b1b1b", footTilt[1]); hand(armR, "#1b1b1b"); }
+  else { hand(armL, "#1b1b1b"); hand(armR, "#1b1b1b"); foot(legLp, -1, "#1b1b1b"); foot(legRp, 1, "#1b1b1b"); }
 
   // ---- prop in the right hand
   if (st.prop) drawProp(g, P(...armR[2]), lw, st.prop);
@@ -126,12 +208,12 @@ function drawLines(g, W, H, spec = {}, st = {}) {
   g.fillStyle = spec.head ?? "#fbfaf5"; g.strokeStyle = "#1b1b1b"; g.lineWidth = lw * 0.85;
   g.beginPath(); g.ellipse(0, 0, R, R * 1.02, 0, 0, Math.PI * 2); g.fill(); g.stroke();
   drawHair(g, R, lw, spec);
-  drawFace(g, R, lw, st, spec);
+  if (st.view !== "back") drawFace(g, R, lw, st, spec);
   drawHat(g, R, lw, spec);
   g.restore();
 
   if (st.sweat) { g.fillStyle = "#7fc3ec"; g.strokeStyle = "#1b1b1b"; g.lineWidth = lw * 0.35; const x = hx + R * 0.95, y = hy - R * 0.5; g.beginPath(); g.moveTo(x, y - R * 0.3); g.quadraticCurveTo(x + R * 0.18, y, x, y + R * 0.08); g.quadraticCurveTo(x - R * 0.18, y, x, y - R * 0.3); g.fill(); g.stroke(); }
-  return { headPx: [hx, hy], scale: s, lw };
+  return { headPx: [hx, hy], scale: s, lw, ext };
 }
 
 function roundRectPath(g, x, y, w, h, r) {
@@ -139,8 +221,10 @@ function roundRectPath(g, x, y, w, h, r) {
 }
 
 function drawFace(g, R, lw, st, spec) {
-  const face = st.face ?? "neutral", lk = (st.look ?? 0) * R * 0.14, blink = st.blink ?? 0, talk = st.talk ?? 0;
-  const ex = R * 0.36, ey = -R * 0.05, er = R * 0.12;
+  const face = st.face ?? "neutral", blink = st.blink ?? 0, talk = st.talk ?? 0;
+  // in profile the face sits toward the front of the head and the eyes come closer together
+  const lk = st.view === "side" ? R * 0.36 : (st.look ?? 0) * R * 0.14;
+  const ex = st.view === "side" ? R * 0.2 : R * 0.36, ey = -R * 0.05, er = R * 0.12;
   g.fillStyle = "#1b1b1b"; g.strokeStyle = "#1b1b1b"; g.lineCap = "round";
   const eye = (sx) => {
     const x = sx * ex + lk, y = ey;

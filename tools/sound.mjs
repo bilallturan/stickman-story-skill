@@ -4,7 +4,8 @@
 // Reads <project>/sound.json:
 //   { "voice": "voice.mp3",
 //     "music": { "mood": "playful|mystery|tense|warm|epic", "bpm": 104, "level": -17, "start": 0, "end": null, "sting": true },
-//     "sfx": [ { "t": 1.25, "kind": "pop", "gain": 0 } ],  "tail": 0.8 }
+//     "sfx": [ { "t": 1.25, "kind": "pop", "gain": 0 } ],  "steps": { "gain": -10 },  "tail": 0.8 }
+// "steps" puts a footfall on every foot contact of a visible walker (needs work/steps.json from `render.mjs --check`).
 // times in seconds (frame / 30). Writes <project>/work/mix.wav (44.1 kHz stereo). Needs ffmpeg on PATH.
 import fs from "node:fs";
 import path from "node:path";
@@ -98,6 +99,9 @@ const SFX = {
   sting: () => { const o = new Float32Array(Math.round(2.2 * SR)); add(o, 0, pad([110, 131, 165, 220].map((f) => f), 2.0, 0.2)); add(o, 0, kick(0.7)); add(o, 0, pluck(220, 1.6, 0.3, 0.5)); return o; },
   impact: () => { const o = new Float32Array(Math.round(1.0 * SR)); add(o, 0, kick(0.9)); add(o, 0, SFX.thud(), 0.8); return o; },
   splash: () => { const n = Math.round(0.9 * SR), o = new Float32Array(n); let lp = 0; for (let i = 0; i < n; i++) { const t = i / SR; lp += 0.15 * (noise() - lp); o[i] = 0.5 * Math.exp(-t * 5) * lp; } return o; },
+  // one soft footfall: a low knock plus a short scuff of filtered noise
+  step: () => { const n = Math.round(0.16 * SR), o = new Float32Array(n); let lp = 0, f0 = 95 + rnd() * 30;
+    for (let i = 0; i < n; i++) { const t = i / SR; lp += 0.18 * (noise() - lp); o[i] = 0.5 * Math.exp(-t * 38) * Math.sin(2 * Math.PI * f0 * t) + 0.35 * Math.exp(-t * 55) * lp; } return o; },
   footsteps: () => { const o = new Float32Array(Math.round(1.2 * SR)); for (let k = 0; k < 4; k++) add(o, k * 0.28, SFX.thud(), 0.35); return o; },
   drumroll: () => { const o = new Float32Array(Math.round(1.6 * SR)); for (let k = 0; k < 28; k++) add(o, k * 0.05, snare(0.08 + k * 0.003)); add(o, 1.45, kick(0.5)); return o; },
   riser: () => { const n = Math.round(1.5 * SR), o = new Float32Array(n); let ph = 0, lp = 0; for (let i = 0; i < n; i++) { const t = i / SR; ph += (200 + 900 * t * t) / SR; lp += (0.02 + 0.2 * t / 1.5) * (noise() - lp); o[i] = (t / 1.5) * 0.3 * (Math.sin(2 * Math.PI * ph) * 0.5 + lp); } return o; },
@@ -132,6 +136,15 @@ if (cfg.music) {
 }
 const fx = new Float32Array(N);
 for (const s of cfg.sfx ?? []) { const make = SFX[s.kind]; if (!make) { console.log(`unknown sfx "${s.kind}" (skipped)`); continue; } add(fx, s.t, make(), db(-14 + (s.gain ?? 0))); }
+// "steps": { "gain": -10 } → one footfall on every foot contact of a visible walker (work/steps.json from render --check)
+let stepCount = 0;
+if (cfg.steps) {
+  const file = path.join(proj, "work", "steps.json");
+  if (!fs.existsSync(file)) console.log("steps: work/steps.json missing — run `node tools/render.mjs <project> --check` first");
+  else for (const s of JSON.parse(fs.readFileSync(file, "utf8"))) {
+    seed = 11 + s.f; add(fx, s.t, SFX.step(), db(-14 + (cfg.steps.gain ?? -10) + (s.run ? 3 : 0) + (rnd() - 0.5) * 2)); stepCount++;
+  }
+}
 
 const out = Buffer.alloc(44 + N * 4);
 out.write("RIFF", 0); out.writeUInt32LE(36 + N * 4, 4); out.write("WAVEfmt ", 8); out.writeUInt32LE(16, 16); out.writeUInt16LE(1, 20); out.writeUInt16LE(2, 22);
@@ -147,4 +160,4 @@ for (let i = 0; i < N; i++) {
 }
 fs.mkdirSync(path.join(proj, "work"), { recursive: true });
 fs.writeFileSync(path.join(proj, "work", "mix.wav"), out);
-console.log(`mix.wav · ${silent ? "silent (no voice) · " : ""}${total.toFixed(2)} s · music: ${cfg.music?.mood ?? "none"} · ${(cfg.sfx ?? []).length} sfx · peak ${(20 * Math.log10(peak)).toFixed(1)} dBFS`);
+console.log(`mix.wav · ${silent ? "silent (no voice) · " : ""}${total.toFixed(2)} s · music: ${cfg.music?.mood ?? "none"} · ${(cfg.sfx ?? []).length} sfx · ${stepCount} steps · peak ${(20 * Math.log10(peak)).toFixed(1)} dBFS`);

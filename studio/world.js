@@ -44,7 +44,7 @@ export function buildWorldKit(S) {
   K.ground = (texture, size = 300, color = "#ffffff") => {
     const m = mat(color, { map: texture });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), m);
-    mesh.rotation.x = -Math.PI / 2; mesh.receiveShadow = true; scene.add(mesh); return mesh;
+    mesh.rotation.x = -Math.PI / 2; mesh.receiveShadow = true; mesh.userData.noCollide = true; scene.add(mesh); return mesh;
   };
 
   // a building: facade on the front (+z) face, plaster sides, gable or flat roof
@@ -84,7 +84,8 @@ export function buildWorldKit(S) {
 
   K.street = ({ len = 120, width = 7, z = 0 } = {}) => {
     const road = new THREE.Mesh(new THREE.PlaneGeometry(len, width), mat("#fff", { map: cobble(4, [len / 4, width / 4]) }));
-    road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, z); road.receiveShadow = true; scene.add(road);
+    // the two sidewalks are 0.15 m high: a character standing on one needs pos y = 0.15 (S.floor gives it)
+    road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, z); road.receiveShadow = true; road.userData.noCollide = true; scene.add(road);
     for (const s of [-1, 1]) K.box(len, 0.15, 1.6, mat("#fff", { map: paper("#cfc2a8", 21, [len / 3, 1]) }), [0, 0, z + s * (width / 2 + 0.8)], { outline: false });
   };
 
@@ -108,8 +109,8 @@ export function buildWorldKit(S) {
   };
 
   K.bush = (x, z, s = 1, color = "#5f9a52") => K.ball(0.55 * s, color, [x, 0.35 * s, z], { squash: [1.3, 0.8, 1] });
-  K.cloud = (x, y, z, s = 1) => { const g = K.group([x, y, z]); g.scale.setScalar(s); [[0, 0, 0, 1.2], [1.2, -0.2, 0, 0.9], [-1.2, -0.25, 0, 0.85], [0.5, 0.45, 0, 0.8]].forEach(([a, b, c, r]) => K.ball(r, mat("#ffffff"), [a, b, c], { parent: g, outline: false, shadow: false, squash: [1.2, 0.8, 0.8] })); return g; };
-  K.hills = (z = -70, color = "#8fb47a") => { for (let i = -3; i <= 3; i++) K.ball(18 + (i % 2) * 6, shade(color, (i % 3) * 0.06), [i * 26, -8, z - Math.abs(i) * 4], { outline: false, shadow: false, squash: [1.4, 0.7, 1] }); };
+  K.cloud = (x, y, z, s = 1) => { const g = K.group([x, y, z]); g.scale.setScalar(s); g.userData.noCollide = true; [[0, 0, 0, 1.2], [1.2, -0.2, 0, 0.9], [-1.2, -0.25, 0, 0.85], [0.5, 0.45, 0, 0.8]].forEach(([a, b, c, r]) => K.ball(r, mat("#ffffff"), [a, b, c], { parent: g, outline: false, shadow: false, squash: [1.2, 0.8, 0.8] })); return g; };
+  K.hills = (z = -70, color = "#8fb47a") => { for (let i = -3; i <= 3; i++) K.ball(18 + (i % 2) * 6, shade(color, (i % 3) * 0.06), [i * 26, -8, z - Math.abs(i) * 4], { outline: false, shadow: false, squash: [1.4, 0.7, 1] }).userData.noCollide = true; };
   K.sign = (text, w, h, at, o = {}) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: signboard(text, o), side: THREE.DoubleSide })); m.position.set(...at); m.rotation.y = o.rot ?? 0; m.castShadow = true; scene.add(m); return m; };
   K.fence = (x0, x1, z, color = "#e8dcc4") => { for (let x = x0; x <= x1; x += 0.6) K.box(0.12, 0.9, 0.08, color, [x, 0, z], { outline: true }); K.box(x1 - x0, 0.1, 0.06, color, [(x0 + x1) / 2, 0.65, z]); };
   K.bench = (x, z, rot = 0) => { const g = K.group([x, 0, z], rot); K.box(1.6, 0.08, 0.45, "#9a6a43", [0, 0.45, 0], { parent: g }); K.box(1.6, 0.4, 0.06, "#9a6a43", [0, 0.6, -0.2], { parent: g }); [-0.7, 0.7].forEach((a) => K.box(0.08, 0.45, 0.4, "#2c2f33", [a, 0, 0], { parent: g })); return g; };
@@ -119,7 +120,7 @@ export function buildWorldKit(S) {
   // interior room: floor, three walls (front open toward +z), optional window
   K.room = ({ w = 8, d = 6, h = 3.2, wall = "#e9d8b8", floor = "#a0714a", at = [0, 0, 0], window = true } = {}) => {
     const g = K.group(at);
-    const fl = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat("#fff", { map: woodFloor(floor) })); fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; g.add(fl);
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat("#fff", { map: woodFloor(floor) })); fl.rotation.x = -Math.PI / 2; fl.receiveShadow = true; fl.userData.noCollide = true; g.add(fl);
     const wm = mat("#fff", { map: paper(wall, 31, [w / 3, h / 3]) });
     K.box(w, h, 0.2, wm, [0, 0, -d / 2], { parent: g, outline: false });
     K.box(0.2, h, d, wm, [-w / 2, 0, 0], { parent: g, outline: false });

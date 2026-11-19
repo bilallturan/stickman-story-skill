@@ -26,7 +26,7 @@ const fps = S.fps;
 const frames = story.config?.frames ?? (story.config?.seconds ? Math.round(story.config.seconds * fps) : words.length ? Math.ceil((words.at(-1).end + 0.8) * fps) : fps * 5);
 window.META = { fps, frames, w: S.width, h: S.height, look };
 const pv = document.getElementById("preview").getContext("2d");
-window.renderFrame = (f) => { const out = S.render(f); pv.drawImage(out, 0, 0); return out.toDataURL("image/jpeg", 0.92); };
+window.renderFrame = (f, check = false) => { const out = S.render(f); window.lastReport = S.lastReport; window.lastSteps = S.lastSteps; if (check) return null; pv.drawImage(out, 0, 0); return out.toDataURL("image/jpeg", 0.92); };
 window.READY = true;
 </script>
 </body>

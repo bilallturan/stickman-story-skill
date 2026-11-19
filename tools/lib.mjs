@@ -61,6 +61,9 @@ export async function openStudio({ project, story, words, look, params = {}, cpu
   return {
     meta, errors,
     async frame(f) { const url = await page.evaluate((n) => window.renderFrame(n), f); if (errors.length) throw new Error(`frame ${f}: ${errors.at(-1)}`); return Buffer.from(url.split(",")[1], "base64"); },
+    async report() { return page.evaluate(() => window.lastReport ?? []); },
+    async check(f) { await page.evaluate((n) => window.renderFrame(n, true), f); if (errors.length) throw new Error(`frame ${f}: ${errors.at(-1)}`); return page.evaluate(() => window.lastReport ?? []); },
+    async steps() { return page.evaluate(() => window.lastSteps ?? []); },
     async close() { await browser.close(); srv.close(); },
   };
 }

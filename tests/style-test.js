@@ -22,7 +22,7 @@ export function shot(f, S) {
   const v = S.params.variant ?? "street";
   if (v === "close") return {
     light: "golden",
-    camera: { pos: [0.05, 1.5, 3.7], target: [0.05, 1.32, 0], fov: 36 },
+    camera: S.fit([{ pos: [-0.38, 0, 0.1], crop: 0.3 }, { pos: [0.42, 0, -0.35], crop: 0.3 }], { from: [0, 0.12, 1], fov: 36, pad: 0.08 }),
     actors: [{ id: "ali", pos: [-0.38, 0, 0.1], state: { face: "smug", arms: "point", look: 0.6, talk: 0.5, headTilt: -4 } },
              { id: "ayse", pos: [0.42, 0, -0.35], state: { face: "shock", arms: "scared", look: -0.6 } }],
     effects: [{ kind: "exclaim", pos: [0.62, 2.2, -0.35], size: 0.4, t: 0.6 }],
@@ -30,17 +30,18 @@ export function shot(f, S) {
   };
   if (v === "end") return {
     light: "golden",
-    camera: { pos: [0, 1.25, 4.7], target: [0, 1.0, 1.2], fov: 38 },
+    camera: S.fit([{ pos: [-0.42, 0, 1.1], crop: 0.2 }, { pos: [0.3, 0, 1.1], crop: 0.6 }], { from: [0, 0.1, 1], fov: 38, pad: 0.1 }),   // the empty spot on the right leaves room for the end text
     actors: [{ id: "ali", pos: [-0.42, 0, 1.1], state: { face: "happy", arms: "wave", phase: 0.1 } }],
     caption: { text: "Yarın yeni hikâye", age: 1 },
   };
   return {
     light: "golden",
-    camera: { pos: [0, 2.4, 6.3], target: [0, 2.1, -4], fov: 52 },
-    actors: [{ id: "ali", pos: [-1.0, 0, 0.6], state: { face: "smug", arms: "point", look: 0.7 } },
-             { id: "ayse", pos: [0.6, 0, 0], state: { face: "shock", arms: "scared", look: -0.7 } },
-             { id: "dede", pos: [2.2, 0, -2.5], state: { face: "think", arms: "think", look: -0.5 } }],
-    effects: [{ kind: "exclaim", pos: [0.9, 2.35, 0], size: 0.55, t: 0.6 }, { kind: "question", pos: [2.5, 2.6, -2.5], size: 0.5, t: 0.6 }],
+    // three people staged in depth (a 9:16 picture is narrow), camera from S.fit so nobody is cut
+    camera: S.fit([[-0.55, 0, 0.6], [0.35, 0, -0.7], [1.05, 0, -2.5]], { from: [-0.1, 0.35, 1], fov: 46, pad: 0.1 }),
+    actors: [{ id: "ali", pos: [-0.55, 0, 0.6], state: { face: "smug", arms: "point", look: 0.7 } },
+             { id: "ayse", pos: [0.35, 0, -0.7], state: { face: "shock", arms: "scared", look: -0.7 } },
+             { id: "dede", pos: [1.05, 0, -2.5], state: { face: "think", arms: "think", look: -0.5 } }],
+    effects: [{ kind: "exclaim", pos: [0.6, 2.3, -0.7], size: 0.5, t: 0.6 }, { kind: "question", pos: [1.35, 2.6, -2.5], size: 0.5, t: 0.6 }],
     caption: { text: "Bir gün", age: 1 },
   };
 }
